@@ -4,27 +4,25 @@
 #define TIME 6 // 定义时间片大小，单位：秒（s） 
 using namespace std;
 
+//进程标识：PCB
 typedef struct PCB {
-//	进程id
     int id;
-//  到达时间
     int arrivedTime;
-//  运行所需要的时间
-    int needTime;
-//  已使用的时间
+    int requiredTime;
     int usedTime;
-//  三种状态：Ready、Running、Dead
     char state[6];
 }PCB, *pPCB;
 
 //进程组织：链接方式，here采用双向链表（带头节点）
 typedef struct PCBNode {
-	PCB pcb;
-//	上一个PCB
-	PCBNode *before;
-//  下一个PCB
+    PCB pcb;
+    PCBNode *before;
     PCBNode *next;
 }PCBNode, *pPCBNode;
+
+//进程控制：原语
+void schedule(pPCBNode &p);     //进程调度原语
+void kill(pPCBNode &p);         //进程终止原语
 
 
 // 打印输出PCB链表，直观展现各个PCB状态 
@@ -35,7 +33,6 @@ void initPCB();
 pPCBNode checkReadyList();
 // 运行 
 void Running();
-
 
 int mycount ;
 pPCBNode ReadyList = new PCBNode;
@@ -54,7 +51,7 @@ void showPCB() {
 	while(p) {
 		PCB pcb = p->pcb;
 		printf("%-6d|%-12d|%-12d|%-12d|%-12s\n", 
-			pcb.id, pcb.arrivedTime, pcb.needTime, pcb.usedTime, pcb.state);
+			pcb.id, pcb.arrivedTime, pcb.requiredTime, pcb.usedTime, pcb.state);
 		p = p->next;
 	}
 }
@@ -73,7 +70,7 @@ void initPCB() {
         // PCB pcb = temp->pcb;
         temp->pcb.id = i;
         temp->pcb.arrivedTime = rand() % 10 + 1;
-        temp->pcb.needTime = rand() % 10 + 1;
+        temp->pcb.requiredTime = rand() % 10 + 1;
         temp->pcb.usedTime = 0;
         strcpy(temp->pcb.state, "Ready");
         //头结点的before用来记录当前链表的尾结点（避免还要单独建一个tail标记尾结点） 
@@ -109,17 +106,15 @@ void Running() {
 			printf("执行中......\n");
 			showPCB();
 
-            int remainingTime = p->pcb.needTime - p->pcb.usedTime;
+            int remainingTime = p->pcb.requiredTime - p->pcb.usedTime;
 			if (remainingTime <= TIME) {
 				Sleep(remainingTime * 1000);
 				strcpy(p->pcb.state, "Dead");
-				p->pcb.usedTime = p->pcb.needTime;
+				p->pcb.usedTime = p->pcb.requiredTime;
 				printf("执行完毕，id=%d的PCB状态转为“Dead”\n", p->pcb.id);
                 if (p->next) {
 //TO DO 封装成进程终止原语
-					p->before->next = p->next;
-					p->next->before = p->before;
-					delete p;
+					kill(p);
 				}
 //TO DO 进程占用的内存空间的回收
 
@@ -130,12 +125,7 @@ void Running() {
                 //当前未执行完毕的PCB连接到链表尾
 				if (p->next) {
 //TO DO 封装成进程切换原语
-					p->before->next = p->next;
-					p->next->before = p->before;
-					p->before = ReadyList->before;
-					ReadyList->before->next = p;
-					ReadyList->before = p;
-					p->next = NULL;
+					schedule(p);
 				}
 				printf("时间片到，还未执行完毕，id=%d的PCB状态转为“Ready”\n", p->pcb.id);
 			}
@@ -143,4 +133,19 @@ void Running() {
 		// showPCB();
 		printf("\n");
 	}
+}
+
+void schedule(pPCBNode &p){
+    p->before->next = p->next;
+    p->next->before = p->before;
+    p->before = ReadyList->before;
+    ReadyList->before->next = p;
+    ReadyList->before = p;
+    p->next = NULL;    
+}
+
+void kill(pPCBNode &p){
+    p->before->next = p->next;
+    p->next->before = p->before;
+    delete p;
 }
