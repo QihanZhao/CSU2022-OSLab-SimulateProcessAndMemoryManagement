@@ -23,7 +23,7 @@ typedef struct PCBNode {
 //进程控制：原语
 void schedule(pPCBNode &p);     //进程调度原语
 void kill(pPCBNode &p);         //进程终止原语
-
+void creatPCB();
 
 // 打印输出PCB链表，直观展现各个PCB状态 
 void showPCB();
@@ -34,13 +34,68 @@ pPCBNode checkReadyList();
 // 运行 
 void Running();
 
+//mutex mtx;
+int monitor;
+int pcbID;
 int mycount ;
 pPCBNode ReadyList = new PCBNode;
 
 int main() {
 	initPCB();
-	Running();
+	thread myThread ( Running );
+	myThread.detach();
+	
+	string s;
+	while(1){
+		printf("[myshell]# ");
+		
+//	  	cin>>s;		
+		getline(cin,s);
+		istringstream record(s);
+
+//	  	cout<<s;
+		string out;
+        record >> out;
+        if(out == "creat") {
+			creatPCB(); 
+		}else if(out == "show"){
+			showPCB();
+		}else if(out == "moni"){
+			monitor = 1 ;
+		}else if(out == "cls"){
+			monitor = 0 ;
+		}
+		
+		
+	}
+	
 	return 0;
+}
+
+void creatPCB(){
+//    mtx.lock();
+    pPCBNode temp = new PCBNode;
+    //指针域赋值
+    temp->before = ReadyList->before;
+    temp->next = NULL;
+    ReadyList->before->next = temp;
+    ReadyList->before = temp;
+    //数据域赋值
+    // PCB pcb = temp->pcb;
+    temp->pcb.id = pcbID;
+    temp->pcb.arrivedTime = rand() % 2 + pcbID*3;
+    temp->pcb.requiredTime = rand() % 10 + 1;
+    temp->pcb.usedTime = 0;
+    strcpy(temp->pcb.state, "Ready");
+    //头结点的before用来记录当前链表的尾结点（避免还要单独建一个tail标记尾结点） 
+    pcbID++;
+//    mtx.unlock();
+	printf("id    |到达时间    |所需时间    |已用时间    |状态\n");
+    printf("---------------------------------------------------\n"); 
+	PCB pcb = temp->pcb;
+	printf("%-6d|%-12d|%-12d|%-12d|%-12s\n", 
+		pcb.id, pcb.arrivedTime, pcb.requiredTime, pcb.usedTime, pcb.state);
+	puts("");
 }
 
 // 打印输出PCB链表，直观展现各个PCB状态 
@@ -54,6 +109,7 @@ void showPCB() {
 			pcb.id, pcb.arrivedTime, pcb.requiredTime, pcb.usedTime, pcb.state);
 		p = p->next;
 	}
+	puts("");
 }
 
 // 初始化PCB
@@ -68,8 +124,8 @@ void initPCB() {
         p = temp;
         //数据域赋值
         // PCB pcb = temp->pcb;
-        temp->pcb.id = i;
-        temp->pcb.arrivedTime = rand() % 10 + 1;
+        temp->pcb.id = pcbID++;
+        temp->pcb.arrivedTime = rand() % 2 + i*1;
         temp->pcb.requiredTime = rand() % 10 + 1;
         temp->pcb.usedTime = 0;
         strcpy(temp->pcb.state, "Ready");
@@ -83,6 +139,7 @@ void initPCB() {
 
 // 检查ReadyList中是否还有未执行的PCB
 pPCBNode checkReadyList() {
+//    mtx.lock();
 	pPCBNode p = ReadyList->next;
 	while(p) {
 		if (strcmp(p->pcb.state, "Ready") == 0) {
@@ -90,6 +147,7 @@ pPCBNode checkReadyList() {
 		}
 		p = p->next;
 	}
+//    mtx.unlock();
 	return NULL;
 }
 
@@ -97,25 +155,25 @@ pPCBNode checkReadyList() {
 // 运行 
 void Running() {
 	pPCBNode p = NULL;
-	while(p = checkReadyList()) {
+	while(1) {
+        p = checkReadyList();
 		// checkPCB(p);
 		if (p != NULL) {
-            cout << "第" <<mycount++<<"次切换"<<endl;
-			printf("此次要执行的PCB的id=%d\n", p->pcb.id);
+            // cout << "第" <<mycount++<<"次切换"<<endl;
+			// printf("此次要执行的PCB的id=%d\n", p->pcb.id);
+			// printf("执行中......\n");
+			// showPCB();
+			
 			strcpy(p->pcb.state, "Running");
-			printf("执行中......\n");
-			showPCB();
-
             int remainingTime = p->pcb.requiredTime - p->pcb.usedTime;
 			if (remainingTime <= TIME) {
 				Sleep(remainingTime * 1000);
 				strcpy(p->pcb.state, "Dead");
 				p->pcb.usedTime = p->pcb.requiredTime;
-				printf("执行完毕，id=%d的PCB状态转为“Dead”\n", p->pcb.id);
-                if (p->next) {
+				if(monitor == 1) printf("\nid=%d执行完毕，PCB状态转为“Dead”",  p->pcb.id);
 //TO DO 封装成进程终止原语
-					kill(p);
-				}
+				kill(p);
+
 //TO DO 进程占用的内存空间的回收
 
 			} else {
@@ -127,11 +185,10 @@ void Running() {
 //TO DO 封装成进程切换原语
 					schedule(p);
 				}
-				printf("时间片到，还未执行完毕，id=%d的PCB状态转为“Ready”\n", p->pcb.id);
+				if(monitor == 1) printf("\n时间片到，id=%d的还未执行完毕，PCB状态转为“Ready”", p->pcb.id);
 			}
 		}
 		// showPCB();
-		printf("\n");
 	}
 }
 
@@ -145,7 +202,14 @@ void schedule(pPCBNode &p){
 }
 
 void kill(pPCBNode &p){
-    p->before->next = p->next;
-    p->next->before = p->before;
-    delete p;
+	if (p->next) {
+	    p->before->next = p->next;
+	    p->next->before = p->before;
+	    delete p;
+	}else{
+		p->before->next = p->next;
+		ReadyList->before = ReadyList;
+		delete p;
+	}
+
 }
