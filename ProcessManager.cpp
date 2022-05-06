@@ -10,10 +10,11 @@ typedef struct PCB {
     int arrivedTime;
     int requiredTime;
     int usedTime;
-    char state[6];
+    char state[8];
 }PCB, *pPCB;
 
 //进程组织：链接方式，here采用双向链表（带头节点）
+//由于规模比较小，这里使用单一PCB链
 typedef struct PCBNode {
     PCB pcb;
     PCBNode *before;
@@ -24,6 +25,7 @@ typedef struct PCBNode {
 void schedule(pPCBNode &p);     //进程调度原语
 void kill(pPCBNode &p);         //进程终止原语
 void creatPCB();
+void block(int id);
 
 // 打印输出PCB链表，直观展现各个PCB状态 
 void showPCB();
@@ -34,7 +36,8 @@ pPCBNode checkReadyList();
 // 运行 
 void Running();
 
-//mutex mtx;
+
+// mutex mtx;
 int monitor;
 int pcbID;
 int mycount ;
@@ -47,7 +50,7 @@ int main() {
 	
 	string s;
 	while(1){
-		printf("[myshell]# ");
+		printf("\n[myshell]# ");
 		
 //	  	cin>>s;		
 		getline(cin,s);
@@ -60,6 +63,10 @@ int main() {
 			creatPCB(); 
 		}else if(out == "show"){
 			showPCB();
+		}else if(out == "block"){
+			record >> out;
+			int num = atoi(out.c_str());
+			block(num);
 		}else if(out == "moni"){
 			monitor = 1 ;
 		}else if(out == "cls"){
@@ -72,31 +79,6 @@ int main() {
 	return 0;
 }
 
-void creatPCB(){
-//    mtx.lock();
-    pPCBNode temp = new PCBNode;
-    //指针域赋值
-    temp->before = ReadyList->before;
-    temp->next = NULL;
-    ReadyList->before->next = temp;
-    ReadyList->before = temp;
-    //数据域赋值
-    // PCB pcb = temp->pcb;
-    temp->pcb.id = pcbID;
-    temp->pcb.arrivedTime = rand() % 2 + pcbID*3;
-    temp->pcb.requiredTime = rand() % 10 + 1;
-    temp->pcb.usedTime = 0;
-    strcpy(temp->pcb.state, "Ready");
-    //头结点的before用来记录当前链表的尾结点（避免还要单独建一个tail标记尾结点） 
-    pcbID++;
-//    mtx.unlock();
-	printf("id    |到达时间    |所需时间    |已用时间    |状态\n");
-    printf("---------------------------------------------------\n"); 
-	PCB pcb = temp->pcb;
-	printf("%-6d|%-12d|%-12d|%-12d|%-12s\n", 
-		pcb.id, pcb.arrivedTime, pcb.requiredTime, pcb.usedTime, pcb.state);
-	puts("");
-}
 
 // 打印输出PCB链表，直观展现各个PCB状态 
 void showPCB() {
@@ -163,7 +145,7 @@ void Running() {
 			// printf("此次要执行的PCB的id=%d\n", p->pcb.id);
 			// printf("执行中......\n");
 			// showPCB();
-			
+
 			strcpy(p->pcb.state, "Running");
             int remainingTime = p->pcb.requiredTime - p->pcb.usedTime;
 			if (remainingTime <= TIME) {
@@ -192,6 +174,32 @@ void Running() {
 	}
 }
 
+void creatPCB(){
+//    mtx.lock();
+    pPCBNode temp = new PCBNode;
+    //指针域赋值
+    temp->before = ReadyList->before;
+    temp->next = NULL;
+    ReadyList->before->next = temp;
+    ReadyList->before = temp;
+    //数据域赋值
+    // PCB pcb = temp->pcb;
+    temp->pcb.id = pcbID;
+    temp->pcb.arrivedTime = rand() % 2 + pcbID*3;
+    temp->pcb.requiredTime = rand() % 10 + 1;
+    temp->pcb.usedTime = 0;
+    strcpy(temp->pcb.state, "Ready");
+    //头结点的before用来记录当前链表的尾结点（避免还要单独建一个tail标记尾结点） 
+    pcbID++;
+//    mtx.unlock();
+	printf("id    |到达时间    |所需时间    |已用时间    |状态\n");
+    printf("---------------------------------------------------\n"); 
+	PCB pcb = temp->pcb;
+	printf("%-6d|%-12d|%-12d|%-12d|%-12s\n", 
+		pcb.id, pcb.arrivedTime, pcb.requiredTime, pcb.usedTime, pcb.state);
+	puts("");
+}
+
 void schedule(pPCBNode &p){
     p->before->next = p->next;
     p->next->before = p->before;
@@ -212,4 +220,20 @@ void kill(pPCBNode &p){
 		delete p;
 	}
 
+}
+
+void block(int id){
+    pPCBNode p = ReadyList->next;
+    while(p) {
+		if(p->pcb.id == id){
+            strcpy(p->pcb.state, "Blocked");
+            printf("id=%d被阻塞\n", id);
+            return;
+        }
+		else{
+            p = p->next;
+        }
+	}
+    //不存在指定要阻塞的进程
+	puts("error");
 }
