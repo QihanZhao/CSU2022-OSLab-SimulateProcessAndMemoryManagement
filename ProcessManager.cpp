@@ -1,9 +1,9 @@
-//实现了互斥锁
+//实现wakeup原语& 计时器
 #include<bits/stdc++.h> 
 #include <mutex> 
 #include <windows.h>
 #define MAX 5  // 定义最大进程数
-#define TIME 1 // 定义时间片大小，单位：秒（s）
+#define TIME 6 // 定义时间片大小，单位：秒（s）
 
 using namespace std;
 
@@ -27,23 +27,26 @@ typedef struct PCBNode {
 //进程控制：原语
 void schedule(pPCBNode &p);     //进程调度原语
 void kill(pPCBNode &p);         //进程终止原语
-void creatPCB();
-void block(int id);
+void creatPCB();                //进程创建原语
+void block(int id);             //进程阻塞原语
+void wakeup(int id);            //进程唤醒原语
 
 //OS中的工具函数
-void initPCB();     // 初始化PCB
-void showPCB();     // 打印输出PCB链表，直观展现各个PCB状态 
+void initPCB();                 // 初始化PCB
+void showPCB();                 // 打印输出PCB链表，直观展现各个PCB状态 
 pPCBNode checkReadyList();      // 检查ReadyList中是否还有未执行的PCB
-void startOS();     // 运行 
+void startOS();                 // 启动OS 
 
-
-mutex mtx;
-int monitor;
-int pcbID;
-int mycount ;
-pPCBNode ReadyList = new PCBNode;
+//全局变量
+mutex mtx;                          //内核数据结构（PCB链）的互斥锁
+pPCBNode ReadyList = new PCBNode;   //内核数据结构（PCB链）
+int pcbID;                          //创建PCB时，用于产生pcb的id
+clock_t beginTime                   //创建PCB时，用于产生达到时间
 
 int main() {
+	
+	beginTime = clock();
+
 	initPCB();
 	thread myThread ( startOS );
 	myThread.detach();
@@ -67,12 +70,7 @@ int main() {
 			record >> out;
 			int num = atoi(out.c_str());
 			block(num);
-		}else if(out == "moni"){
-			monitor = 1 ;
-		}else if(out == "cls"){
-			monitor = 0 ;
 		}
-		
 		
 	}
 	
@@ -107,7 +105,7 @@ void initPCB() {
         //数据域赋值
         // PCB pcb = temp->pcb;
         temp->pcb.id = pcbID++;
-        temp->pcb.arrivedTime = rand() % 2 + i*1;
+        temp->pcb.arrivedTime = 0;
         temp->pcb.requiredTime = rand() % 10 + 1;
         temp->pcb.usedTime = 0;
         strcpy(temp->pcb.state, "Ready");
@@ -122,7 +120,7 @@ void initPCB() {
 // 检查ReadyList中是否还有未执行的PCB
 //Tip:多出口的函数，在互斥量的控制时要非常注意，在每个出口前都要unlock 
 pPCBNode checkReadyList() {
-    mtx.lock();
+    
 	pPCBNode p = ReadyList->next;
 	while(p) {
 		if (strcmp(p->pcb.state, "Ready") == 0) {
@@ -131,48 +129,37 @@ pPCBNode checkReadyList() {
 		}
 		p = p->next;
 	}
-    mtx.unlock();
+    
 	return NULL;
 }
 
-
-// 运行 
 void startOS() {
 	pPCBNode p = NULL;
 	while(1) {
         p = checkReadyList();
-		// checkPCB(p);
 		if (p != NULL) {
-            // cout << "第" <<mycount++<<"次切换"<<endl;
-			// printf("此次要执行的PCB的id=%d\n", p->pcb.id);
-			// printf("执行中......\n");
-			// showPCB();
-
 			strcpy(p->pcb.state, "Running");
             int remainingTime = p->pcb.requiredTime - p->pcb.usedTime;
 			if (remainingTime <= TIME) {
 				Sleep(remainingTime * 1000);
 				strcpy(p->pcb.state, "Dead");
 				p->pcb.usedTime = p->pcb.requiredTime;
-				if(monitor == 1) printf("\nid=%d执行完毕，PCB状态转为“Dead”",  p->pcb.id);
-//TO DO 封装成进程终止原语
+                //进程终止原语
 				kill(p);
-
 //TO DO 进程占用的内存空间的回收
 
-			} else {
+			} else {			
                 Sleep(TIME * 1000);
 				strcpy(p->pcb.state, "Ready");
 				p->pcb.usedTime += TIME;
-                //当前未执行完毕的PCB连接到链表尾
 				if (p->next) {
-//TO DO 封装成进程切换原语
+                    //进程切换原语
 					schedule(p);
 				}
-				if(monitor == 1) printf("\n时间片到，id=%d的还未执行完毕，PCB状态转为“Ready”", p->pcb.id);
 			}
 		}
-		// showPCB();
+        
+
 	}
 }
 
@@ -186,13 +173,13 @@ void creatPCB(){
 	    ReadyList->before->next = temp;
 	    ReadyList->before = temp;
 	    //数据域赋值
-	    // PCB pcb = temp->pcb;
+	    // PCB pcb = temp->pcb; 典型错误：这是深拷贝，无法修改母体
 	    temp->pcb.id = pcbID;
-	    temp->pcb.arrivedTime = rand() % 2 + pcbID*3;
+        temp->pcb.arrivedTime = ((clock() - beginTime) / CLOCKS_PER_SEC );
 	    temp->pcb.requiredTime = rand() % 10 + 1;
 	    temp->pcb.usedTime = 0;
 	    strcpy(temp->pcb.state, "Ready");
-	    //头结点的before用来记录当前链表的尾结点（避免还要单独建一个tail标记尾结点） 
+	    //头结点的before用来记录当前链表的tail 
 	    pcbID++;
     mtx.unlock();
     
@@ -232,7 +219,7 @@ void kill(pPCBNode &p){
 
 //Tip:多出口的函数，在互斥量的控制时要非常注意，在每个出口前都要unlock 
 void block(int id){
-	mtx.lock();   
+	mtx.lock();
 	    pPCBNode p = ReadyList->next;
 	    while(p) {
 			if(p->pcb.id == id){
@@ -246,6 +233,26 @@ void block(int id){
 	        }
 		}
 	    //不存在指定要阻塞的进程
+		puts("error");
+	mtx.unlock();   
+}
+
+
+void wakeup(int id){
+	mtx.lock();   
+	    pPCBNode p = ReadyList->next;
+	    while(p) {
+			if(p->pcb.id == id){
+	            strcpy(p->pcb.state, "Ready");
+	            printf("id=%d被唤醒\n", id);
+                mtx.unlock();
+	            return;
+	        }
+			else{
+	            p = p->next;
+	        }
+		}
+	    //不存在指定要唤醒的进程
 		puts("error");
 	mtx.unlock();   
 }
